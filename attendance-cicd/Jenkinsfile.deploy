@@ -1,7 +1,20 @@
 pipeline {
+
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
     parameters {
+
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['staging', 'production'],
+            description: 'Deployment environment'
+        )
+
         string(
             name: 'BUILD_NUMBER',
             defaultValue: 'latest',
@@ -23,24 +36,28 @@ pipeline {
 
         DOCKER_IMAGE = "${ECR_URI}:${IMAGE_TAG}"
 
-        SERVER_IP = 'YOUR_EC2_PUBLIC_IP'
+        SERVER_IP = '13.233.216.182'
 
         SSH_USER = 'ec2-user'
+
+        CONTAINER_NAME = 'attendance-app'
+
+        BUILD_USER = 'jainritika4605@gmail.com'
     }
 
     stages {
 
-        stage('Verify Image') {
+        stage('Verify ECR Image') {
 
             steps {
 
                 withAWS(credentials: 'aws_creds', region: 'ap-south-1') {
 
-                    sh '''
-                    aws ecr describe-images \
-                    --repository-name attendance-management \
+                    bat """
+                    aws ecr describe-images ^
+                    --repository-name attendance-management ^
                     --image-ids imageTag=${IMAGE_TAG}
-                    '''
+                    """
                 }
             }
         }
@@ -51,25 +68,19 @@ pipeline {
 
                 sshagent(credentials: ['aws_ec2_key_devops']) {
 
-                    sh """
-                    ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SERVER_IP} '
+                    bat """
+                    ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SERVER_IP} ^
 
-                    aws ecr get-login-password --region ap-south-1 | \
-                    docker login --username AWS --password-stdin \
-                    094005227117.dkr.ecr.ap-south-1.amazonaws.com
-
-                    docker pull ${DOCKER_IMAGE}
-
-                    docker stop myapp || true
-                    docker rm myapp || true
-
-                    docker run -d \
-                      --name myapp \
-                      -p 80:8080 \
-                      ${DOCKER_IMAGE}
-                    '
+                    "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com && docker pull ${DOCKER_IMAGE} && docker stop ${CONTAINER_NAME} || true && docker rm ${CONTAINER_NAME} || true && docker image prune -f || true && docker run -d --name ${CONTAINER_NAME} -p 80:8080 ${DOCKER_IMAGE}"
                     """
                 }
+            }
+        }
+
+        stage('Wait For Startup') {
+
+            steps {
+                sleep(time: 15, unit: 'SECONDS')
             }
         }
 
@@ -77,8 +88,24 @@ pipeline {
 
             steps {
 
-                sh """
-                curl --fail http://${SERVER_IP}/attendance/health
+                retry(3) {
+
+                    bat """
+                    curl --fail http://${SERVER_IP}/attendance/health
+                    """
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+
+            steps {
+
+                bat """
+                curl -X POST ^
+                -H "Content-Type: application/json" ^
+                -d "{\\"userId\\":\\"TEST001\\",\\"userName\\":\\"Smoke Test\\",\\"location\\":\\"Jenkins\\"}" ^
+                http://${SERVER_IP}/attendance/checkin
                 """
             }
         }
@@ -90,8 +117,20 @@ pipeline {
 
             emailext(
                 subject: "SUCCESS: Deployment #${BUILD_NUMBER}",
-                body: "Deployment completed successfully.",
-                to: "jainritika4605@gmail.com"
+                body: """
+Deployment completed successfully.
+
+Environment:
+${params.ENVIRONMENT}
+
+Docker Image:
+${DOCKER_IMAGE}
+
+Server:
+${SERVER_IP}
+
+""",
+                to: "${BUILD_USER}"
             )
         }
 
@@ -99,8 +138,14 @@ pipeline {
 
             emailext(
                 subject: "FAILED: Deployment #${BUILD_NUMBER}",
-                body: "Deployment failed.",
-                to: "jainritika4605@gmail.com"
+                body: """
+Deployment failed.
+
+Check Jenkins logs:
+${BUILD_URL}
+
+""",
+                to: "${BUILD_USER}"
             )
         }
     }

@@ -1,11 +1,26 @@
 pipeline {
+
     agent any
 
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
     environment {
-        AWS_REGION = 'us-east-1'
-        AWS_ACCOUNT_ID = 'YOUR_ACCOUNT_ID'
+
+        AWS_REGION = 'ap-south-1'
+
+        AWS_ACCOUNT_ID = credentials('aws-account-id')
+
         ECR_REPO = 'attendance-management'
+
         IMAGE_TAG = "${BUILD_NUMBER}"
+
+        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
+
+        BUILD_USER = 'jainritika4605@gmail.com'
     }
 
     triggers {
@@ -15,71 +30,117 @@ pipeline {
     stages {
 
         stage('Checkout') {
+
             steps {
                 checkout scm
             }
         }
 
         stage('Run Tests') {
+
             steps {
-                sh './mvnw test'
+
+                bat """
+                mvnw.cmd test
+                """
             }
         }
 
         stage('Build JAR') {
+
             steps {
-                sh './mvnw clean package -DskipTests'
+
+                bat """
+                mvnw.cmd clean package -DskipTests
+                """
             }
         }
 
         stage('Build Docker Image') {
+
             steps {
-                sh """
-                docker build -t $ECR_REPO:$IMAGE_TAG .
+
+                bat """
+                docker build -t attendance-management:%IMAGE_TAG% .
                 """
             }
         }
 
         stage('Login to ECR') {
+
             steps {
-                withAWS(credentials: 'aws-ecr-credentials', region: "${AWS_REGION}") {
-                    sh """
-                    aws ecr get-login-password --region $AWS_REGION | \
-                    docker login --username AWS --password-stdin \
-                    $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+                withAWS(credentials: 'aws_creds', region: 'ap-south-1') {
+
+                    bat """
+                    aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.ap-south-1.amazonaws.com
                     """
                 }
             }
         }
 
-        stage('Push Image') {
-            steps {
-                sh """
-                docker tag $ECR_REPO:$IMAGE_TAG \
-                $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+        stage('Tag Docker Image') {
 
-                docker push \
-                $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+            steps {
+
+                bat """
+                docker tag attendance-management:%IMAGE_TAG% %ECR_URI%:%IMAGE_TAG%
+
+                docker tag attendance-management:%IMAGE_TAG% %ECR_URI%:latest
+                """
+            }
+        }
+
+        stage('Push Docker Image') {
+
+            steps {
+
+                bat """
+                docker push %ECR_URI%:%IMAGE_TAG%
+
+                docker push %ECR_URI%:latest
                 """
             }
         }
     }
 
     post {
+
         success {
+
             emailext(
-                subject: "Build Success #${BUILD_NUMBER}",
-                body: "Docker image pushed successfully.",
-                to: "jainritika4605@gmail.com"
+                subject: "SUCCESS: Attendance Build #%BUILD_NUMBER%",
+                body: """
+Build completed successfully.
+
+Docker Image:
+%ECR_URI%:%IMAGE_TAG%
+
+""",
+                to: "${BUILD_USER}"
             )
         }
 
         failure {
+
             emailext(
-                subject: "Build Failed #${BUILD_NUMBER}",
-                body: "Pipeline failed. Check Jenkins logs.",
-                to: "jainritika4605@gmail.com"
+                subject: "FAILED: Attendance Build #%BUILD_NUMBER%",
+                body: """
+Build failed.
+
+Check Jenkins logs:
+%BUILD_URL%
+
+""",
+                to: "${BUILD_USER}"
             )
+        }
+
+        always {
+
+            bat """
+            docker image prune -f
+            """
         }
     }
 }

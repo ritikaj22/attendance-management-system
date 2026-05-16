@@ -29,3 +29,11 @@ Thumbs.db
 
 # Jenkins
 .jenkins/
+
+target/
+.idea/
+*.iml
+
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
