@@ -1,0 +1,107 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(
+            name: 'BUILD_NUMBER',
+            defaultValue: 'latest',
+            description: 'Docker image tag'
+        )
+    }
+
+    environment {
+
+        AWS_REGION = 'ap-south-1'
+
+        AWS_ACCOUNT_ID = '094005227117'
+
+        ECR_REPO = 'attendance-management'
+
+        ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
+
+        IMAGE_TAG = "${params.BUILD_NUMBER}"
+
+        DOCKER_IMAGE = "${ECR_URI}:${IMAGE_TAG}"
+
+        SERVER_IP = 'YOUR_EC2_PUBLIC_IP'
+
+        SSH_USER = 'ec2-user'
+    }
+
+    stages {
+
+        stage('Verify Image') {
+
+            steps {
+
+                withAWS(credentials: 'aws_creds', region: 'ap-south-1') {
+
+                    sh '''
+                    aws ecr describe-images \
+                    --repository-name attendance-management \
+                    --image-ids imageTag=${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to EC2') {
+
+            steps {
+
+                sshagent(credentials: ['aws_ec2_key_devops']) {
+
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SERVER_IP} '
+
+                    aws ecr get-login-password --region ap-south-1 | \
+                    docker login --username AWS --password-stdin \
+                    094005227117.dkr.ecr.ap-south-1.amazonaws.com
+
+                    docker pull ${DOCKER_IMAGE}
+
+                    docker stop myapp || true
+                    docker rm myapp || true
+
+                    docker run -d \
+                      --name myapp \
+                      -p 80:8080 \
+                      ${DOCKER_IMAGE}
+                    '
+                    """
+                }
+            }
+        }
+
+        stage('Health Check') {
+
+            steps {
+
+                sh """
+                curl --fail http://${SERVER_IP}/attendance/health
+                """
+            }
+        }
+    }
+
+    post {
+
+        success {
+
+            emailext(
+                subject: "SUCCESS: Deployment #${BUILD_NUMBER}",
+                body: "Deployment completed successfully.",
+                to: "jainritika4605@gmail.com"
+            )
+        }
+
+        failure {
+
+            emailext(
+                subject: "FAILED: Deployment #${BUILD_NUMBER}",
+                body: "Deployment failed.",
+                to: "jainritika4605@gmail.com"
+            )
+        }
+    }
+}

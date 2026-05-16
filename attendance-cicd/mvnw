@@ -1,0 +1,43 @@
+#!/bin/sh
+# Maven Wrapper Script
+# -----------------------------------------------------------------------------
+
+set -e
+
+# OS specific support
+native_path() { printf %s\n "$1"; }
+case "$(uname)" in
+  CYGWIN*|MINGW*|MSYS*) native_path() { cygpath --path --windows "$1"; } ;;
+esac
+
+# Resolve script location
+MAVEN_PROJECTBASEDIR="${MAVEN_BASEDIR:-$(dirname "$0")}"
+
+# Download Maven if not present
+MAVEN_WRAPPER_JAR="$MAVEN_PROJECTBASEDIR/.mvn/wrapper/maven-wrapper.jar"
+MAVEN_WRAPPER_PROPERTIES="$MAVEN_PROJECTBASEDIR/.mvn/wrapper/maven-wrapper.properties"
+
+if [ ! -f "$MAVEN_WRAPPER_JAR" ]; then
+    echo "Downloading Maven wrapper..."
+    mkdir -p "$MAVEN_PROJECTBASEDIR/.mvn/wrapper"
+    curl -L -o "$MAVEN_WRAPPER_JAR"         "https://repo.maven.apache.org/maven2/org/apache/maven/wrapper/maven-wrapper/3.2.0/maven-wrapper-3.2.0.jar"
+fi
+
+# Read properties
+if [ -f "$MAVEN_WRAPPER_PROPERTIES" ]; then
+    . "$MAVEN_WRAPPER_PROPERTIES"
+fi
+
+MAVEN_VERSION="${distributionUrl##*/}"
+MAVEN_HOME="$MAVEN_PROJECTBASEDIR/.mvn/wrapper/apache-maven-$MAVEN_VERSION"
+
+if [ ! -d "$MAVEN_HOME" ]; then
+    echo "Downloading Maven $MAVEN_VERSION..."
+    mkdir -p "$MAVEN_HOME"
+    curl -L -o "$MAVEN_HOME.tar.gz" "$distributionUrl"
+    tar -xzf "$MAVEN_HOME.tar.gz" -C "$MAVEN_HOME" --strip-components=1
+    rm "$MAVEN_HOME.tar.gz"
+fi
+
+# Execute Maven
+exec "$MAVEN_HOME/bin/mvn" "$@"

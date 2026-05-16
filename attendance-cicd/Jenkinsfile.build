@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = 'YOUR_ACCOUNT_ID'
+        ECR_REPO = 'attendance-management'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+    }
+
+    triggers {
+        githubPush()
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Run Tests') {
+            steps {
+                sh './mvnw test'
+            }
+        }
+
+        stage('Build JAR') {
+            steps {
+                sh './mvnw clean package -DskipTests'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh """
+                docker build -t $ECR_REPO:$IMAGE_TAG .
+                """
+            }
+        }
+
+        stage('Login to ECR') {
+            steps {
+                withAWS(credentials: 'aws-ecr-credentials', region: "${AWS_REGION}") {
+                    sh """
+                    aws ecr get-login-password --region $AWS_REGION | \
+                    docker login --username AWS --password-stdin \
+                    $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+                    """
+                }
+            }
+        }
+
+        stage('Push Image') {
+            steps {
+                sh """
+                docker tag $ECR_REPO:$IMAGE_TAG \
+                $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+
+                docker push \
+                $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+                """
+            }
+        }
+    }
+
+    post {
+        success {
+            emailext(
+                subject: "Build Success #${BUILD_NUMBER}",
+                body: "Docker image pushed successfully.",
+                to: "jainritika4605@gmail.com"
+            )
+        }
+
+        failure {
+            emailext(
+                subject: "Build Failed #${BUILD_NUMBER}",
+                body: "Pipeline failed. Check Jenkins logs.",
+                to: "jainritika4605@gmail.com"
+            )
+        }
+    }
+}
