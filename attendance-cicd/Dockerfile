@@ -1,42 +1,37 @@
 # ============================================================
-# Attendance Management System - Production Dockerfile
-# Multi-stage build for optimized image size
+# Attendance Management System - Dockerfile
 # ============================================================
 
-# Stage 1: Build Stage
-FROM eclipse-temurin:17-jdk-alpine AS builder
+# Stage 1 - Build
+FROM maven:3.9.6-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-# Copy Maven wrapper and pom.xml first for layer caching
+# Copy pom.xml
 COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
 
-# Download dependencies (cached layer)
-RUN ./mvnw dependency:go-offline -B
+# Download dependencies
+RUN mvn dependency:go-offline -B
 
 # Copy source code
 COPY src src
 
-# Build the application
-RUN ./mvnw clean package -DskipTests -B &&     mkdir -p target/dependency &&     cd target/dependency &&     jar -xf ../*.jar
+# Build application
+RUN mvn clean package -DskipTests -B
 
-# Stage 2: Runtime Stage
+# Stage 2 - Runtime
 FROM eclipse-temurin:17-jre-alpine
-
-# Security: Create non-root user
-RUN addgroup -S attendance && adduser -S attendance -G attendance
 
 WORKDIR /app
 
-# Copy extracted JAR layers from builder
-COPY --from=builder /app/target/dependency/BOOT-INF/lib /app/lib
-COPY --from=builder /app/target/dependency/META-INF /app/META-INF
-COPY --from=builder /app/target/dependency/BOOT-INF/classes /app
+# Create non-root user
+RUN addgroup -S attendance && adduser -S attendance -G attendance
+
+# Copy built jar
+COPY --from=builder /app/target/*.jar app.jar
 
 # Set ownership
-RUN chown -R attendance:attendance /app
+RUN chown attendance:attendance app.jar
 
 USER attendance
 
@@ -44,7 +39,8 @@ USER attendance
 EXPOSE 8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3     CMD wget --no-verbose --tries=1 --spider http://localhost:8080/attendance/health || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+CMD wget --no-verbose --tries=1 --spider http://localhost:8080/attendance/health || exit 1
 
-# Run the application
-ENTRYPOINT ["java", "-cp", "app:app/lib/*", "com.attendance.AttendanceApplication"]
+# Run application
+ENTRYPOINT ["java", "-jar", "app.jar"]

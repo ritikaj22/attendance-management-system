@@ -54,11 +54,12 @@ public class AttendanceRecord {
     @Override
     public String toString() {
         return "AttendanceRecord{" +
-                "userId='" + userId + ''' +
-                ", userName='" + userName + ''' +
+                "userId='" + userId + '\'' +
+                ", userName='" + userName + '\'' +
                 ", checkInTime=" + checkInTime +
-                ", location='" + location + ''' +
-                ", status='" + status + ''' +
+                ", location='" + location + '\'' +
+                ", status='" + status + '\'' +
                 '}';
+
     }
 }
