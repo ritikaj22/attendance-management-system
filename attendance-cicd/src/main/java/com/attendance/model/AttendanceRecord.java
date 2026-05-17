@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
  */
 public class AttendanceRecord {
 
-    @NotBlank(message = "User ID is required")
+    @NotBlank(message = "User ID is required please")
     private String userId;
 
     @NotBlank(message = "User name is required")
