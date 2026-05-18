@@ -19,8 +19,6 @@ pipeline {
         IMAGE_TAG = "${BUILD_NUMBER}"
 
         ECR_URI = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}"
-
-        BUILD_USER = 'jainritika4605@gmail.com'
     }
 
     triggers {
@@ -32,17 +30,9 @@ pipeline {
         stage('Checkout') {
 
             steps {
-                checkout scm
-            }
-        }
 
-        stage('Run Tests') {
-
-            steps {
-
-                bat """
-                mvnw.cmd test
-                """
+                git branch: 'main',
+                    url: 'https://github.com/ritikaj22/attendance-management-system.git'
             }
         }
 
@@ -50,9 +40,11 @@ pipeline {
 
             steps {
 
-                bat """
-                mvnw.cmd clean package -DskipTests
-                """
+                sh '''
+                cd attendance-cicd
+
+                mvn clean package -DskipTests
+                '''
             }
         }
 
@@ -60,9 +52,11 @@ pipeline {
 
             steps {
 
-                bat """
-                docker build -t attendance-management:%IMAGE_TAG% .
-                """
+                sh '''
+                cd attendance-cicd
+
+                docker build -t attendance-management:${IMAGE_TAG} .
+                '''
             }
         }
 
@@ -72,9 +66,11 @@ pipeline {
 
                 withAWS(credentials: 'aws_creds', region: 'ap-south-1') {
 
-                    bat """
-                    aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin %AWS_ACCOUNT_ID%.dkr.ecr.ap-south-1.amazonaws.com
-                    """
+                    sh '''
+                    aws ecr get-login-password --region ap-south-1 | \
+                    docker login --username AWS --password-stdin \
+                    ${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com
+                    '''
                 }
             }
         }
@@ -83,11 +79,11 @@ pipeline {
 
             steps {
 
-                bat """
-                docker tag attendance-management:%IMAGE_TAG% %ECR_URI%:%IMAGE_TAG%
+                sh '''
+                docker tag attendance-management:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
 
-                docker tag attendance-management:%IMAGE_TAG% %ECR_URI%:latest
-                """
+                docker tag attendance-management:${IMAGE_TAG} ${ECR_URI}:latest
+                '''
             }
         }
 
@@ -95,11 +91,11 @@ pipeline {
 
             steps {
 
-                bat """
-                docker push %ECR_URI%:%IMAGE_TAG%
+                sh '''
+                docker push ${ECR_URI}:${IMAGE_TAG}
 
-                docker push %ECR_URI%:latest
-                """
+                docker push ${ECR_URI}:latest
+                '''
             }
         }
     }
@@ -109,38 +105,42 @@ pipeline {
         success {
 
             emailext(
-                subject: "SUCCESS: Attendance Build #%BUILD_NUMBER%",
+                subject: "SUCCESS: Attendance Build #${BUILD_NUMBER}",
                 body: """
 Build completed successfully.
 
-Docker Image:
-%ECR_URI%:%IMAGE_TAG%
+Project:
+Attendance Management System
 
+Docker Image:
+${ECR_URI}:${IMAGE_TAG}
+
+Build URL:
+${BUILD_URL}
 """,
-                to: "${BUILD_USER}"
+                to: "jainritika4605@gmail.com"
             )
         }
 
         failure {
 
             emailext(
-                subject: "FAILED: Attendance Build #%BUILD_NUMBER%",
+                subject: "FAILED: Attendance Build #${BUILD_NUMBER}",
                 body: """
 Build failed.
 
 Check Jenkins logs:
-%BUILD_URL%
-
+${BUILD_URL}
 """,
-                to: "${BUILD_USER}"
+                to: "jainritika4605@gmail.com"
             )
         }
 
         always {
 
-            bat """
-            docker image prune -f
-            """
+            sh '''
+            docker image prune -f || true
+            '''
         }
     }
 }

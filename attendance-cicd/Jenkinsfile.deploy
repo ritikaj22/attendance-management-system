@@ -26,7 +26,7 @@ pipeline {
 
         AWS_REGION = 'ap-south-1'
 
-        AWS_ACCOUNT_ID = '094005227117'
+        AWS_ACCOUNT_ID = credentials('aws-account-id')
 
         ECR_REPO = 'attendance-management'
 
@@ -36,13 +36,11 @@ pipeline {
 
         DOCKER_IMAGE = "${ECR_URI}:${IMAGE_TAG}"
 
-        SERVER_IP = '13.233.216.182'
+        SERVER_IP = credentials('ec2-server-ip')
 
         SSH_USER = 'ec2-user'
 
         CONTAINER_NAME = 'attendance-app'
-
-        BUILD_USER = 'jainritika4605@gmail.com'
     }
 
     stages {
@@ -53,11 +51,11 @@ pipeline {
 
                 withAWS(credentials: 'aws_creds', region: 'ap-south-1') {
 
-                    bat """
-                    aws ecr describe-images ^
-                    --repository-name attendance-management ^
+                    sh '''
+                    aws ecr describe-images \
+                    --repository-name attendance-management \
                     --image-ids imageTag=${IMAGE_TAG}
-                    """
+                    '''
                 }
             }
         }
@@ -68,11 +66,26 @@ pipeline {
 
                 sshagent(credentials: ['aws_ec2_key_devops']) {
 
-                    bat """
-                    ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SERVER_IP} ^
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SERVER_IP} "
 
-                    "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com && docker pull ${DOCKER_IMAGE} && docker stop ${CONTAINER_NAME} || true && docker rm ${CONTAINER_NAME} || true && docker image prune -f || true && docker run -d --name ${CONTAINER_NAME} -p 80:8080 ${DOCKER_IMAGE}"
-                    """
+                    aws ecr get-login-password --region ap-south-1 | \
+                    docker login --username AWS --password-stdin \
+                    ${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com
+
+                    docker pull ${DOCKER_IMAGE}
+
+                    docker stop ${CONTAINER_NAME} || true
+                    docker rm ${CONTAINER_NAME} || true
+
+                    docker image prune -f || true
+
+                    docker run -d \
+                      --name ${CONTAINER_NAME} \
+                      -p 80:8080 \
+                      ${DOCKER_IMAGE}
+                    "
+                    '''
                 }
             }
         }
@@ -90,23 +103,10 @@ pipeline {
 
                 retry(3) {
 
-                    bat """
+                    sh '''
                     curl --fail http://${SERVER_IP}/attendance/health
-                    """
+                    '''
                 }
-            }
-        }
-
-        stage('Smoke Test') {
-
-            steps {
-
-                bat """
-                curl -X POST ^
-                -H "Content-Type: application/json" ^
-                -d "{\\"userId\\":\\"TEST001\\",\\"userName\\":\\"Smoke Test\\",\\"location\\":\\"Jenkins\\"}" ^
-                http://${SERVER_IP}/attendance/checkin
-                """
             }
         }
     }
@@ -115,38 +115,12 @@ pipeline {
 
         success {
 
-            emailext(
-                subject: "SUCCESS: Deployment #${BUILD_NUMBER}",
-                body: """
-Deployment completed successfully.
-
-Environment:
-${params.ENVIRONMENT}
-
-Docker Image:
-${DOCKER_IMAGE}
-
-Server:
-${SERVER_IP}
-
-""",
-                to: "${BUILD_USER}"
-            )
+            echo 'Deployment successful'
         }
 
         failure {
 
-            emailext(
-                subject: "FAILED: Deployment #${BUILD_NUMBER}",
-                body: """
-Deployment failed.
-
-Check Jenkins logs:
-${BUILD_URL}
-
-""",
-                to: "${BUILD_USER}"
-            )
+            echo 'Deployment failed'
         }
     }
 }
